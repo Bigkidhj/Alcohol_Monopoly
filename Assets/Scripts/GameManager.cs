@@ -7,7 +7,7 @@ using UnityEngine.UI;
 public class GameManager : MonoBehaviour
 {
     // 싱글톤 패턴(간단 버전) - 다른 스크립트에서 쉽게 접근하기 위함
-    public static GameManager instance { get; private set; }
+    public static GameManager Instance { get; private set; }
 
     public Button diceRollButton;
     public GameObject diceResultPopup;
@@ -19,17 +19,37 @@ public class GameManager : MonoBehaviour
     public Button exitButton;
 
     public PlayerMovements playerMovements;
-
     public BoardGenerator boardGenerator;
+
+    // ----- 새로운 기능 관련 변수 및 UI 참조 -----
+    [Header("Dice Roll Attempts")]
+    public Button addAttemptButton;       // 횟수 추가 버튼 (Inspector에서 연결)
+    public TMP_Text attemptsText;         // 남은 횟수 표시 텍스트 (Inspector에서 연결)
+    private int diceRollAttempts = 0;     // 주사위 굴리기 가능 횟수 (시작 시 0회 제공)
+
+    [Header("Lap Count")]
+    public TMP_Text lapCountText;         // 바퀴 수 표시 텍스트 (Inspector에서 연결)
+    private int lapCount = 0;             // 현재 바퀴 수
+
+    // ----- 캐릭터 선택 기능 관련 변수 -----
+    [Header("Character Selection")]
+    public GameObject characterSelectionPopup; // 캐릭터 선택 팝업 GameObject (Inspector에서 연결)
+    public Button[] characterSelectionButtons; // 캐릭터 선택 버튼 배열 (Inspector에서 크기 4로 설정 후 연결)
+    public Image playerImage;                  // 플레이어의 Image 컴포넌트 (Inspector에서 연결)
+    public Image diceResultPopupImage;         // 주사위 결과 팝업의 Image 컴포넌트 (Inspector에서 연결)
+    public Image actionPopupImage;             // 액션 팝업의 Image 컴포넌트 (Inspector에서 연결)
+    public Sprite[] playerSprites;             // 플레이어 이미지 배열 (Inspector에서 크기 4로 설정 후 이미지 할당)
+    public Sprite[] dicePopupSprites;          // 주사위 결과 팝업 배경 이미지 배열 (Inspector에서 크기 4로 설정 후 이미지 할당)
+    public Sprite[] actionPopupSprites;        // 행동 팝업 배경 이미지 배열
 
     private int currentDiceValue;
 
     private void Awake()
     {
         // 싱글톤 인스턴스 설정
-        if(instance == null)
+        if(Instance == null)
         {
-            instance = this;
+            Instance = this;
             // DontDestroyOnLoad(gameObject); // 씬 전환시 유지하려면 주석 해제
         }
         else
@@ -40,25 +60,161 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
+        // ----- 캐릭터 선택 팝업 초기화 -----
+        if (characterSelectionPopup != null)
+        {
+            characterSelectionPopup.SetActive(true); // 캐릭터 선택 팝업 표시
+            // 다른 게임 UI는 선택 완료 후 활성화
+            diceRollButton.gameObject.SetActive(false);
+            if (addAttemptButton != null) addAttemptButton.gameObject.SetActive(false);
+            // 다른 UI 요소들도 필요에 따라 비활성화
+        }
+        else
+        {
+            Debug.LogError("Character Selection Popup이 연결되지 않았습니다!");
+            // 선택 팝업이 없으면 바로 게임 시작 준비
+            InitializeGameControls();
+        }
+
+        // 캐릭터 선택 버튼 이벤트 리스너 연결
+        if (characterSelectionButtons != null && characterSelectionButtons.Length == 4)
+        {
+            for (int i = 0; i < characterSelectionButtons.Length; i++)
+            {
+                int buttonIndex = i; // 클로저 문제를 피하기 위해 로컬 변수 사용
+                characterSelectionButtons[i].onClick.AddListener(() => OnCharacterSelected(buttonIndex));
+            }
+        }
+        else
+        {
+            Debug.LogError("캐릭터 선택 버튼이 제대로 설정되지 않았습니다. Inspector에서 4개의 버튼을 연결해주세요.");
+        }
+
         // 버튼 이벤트 리스너 연결
         diceRollButton.onClick.AddListener(RollDice);
         moveButton.onClick.AddListener(ConfirmMove);
+        closeActionButton.onClick.AddListener(CloseActionPopup);
+
+        if (exitButton != null)
+        {
+            exitButton.onClick.AddListener(QuitGame);
+        }
+
+        // ----- 새로운 기능 리스너 및 UI 초기화 -----
+        if (addAttemptButton != null) addAttemptButton.onClick.AddListener(AddDiceAttempt);
+        UpdateAttemptsUI(); // 초기 횟수 UI 업데이트
+        UpdateLapCountUI(); // 초기 바퀴 수 UI 업데이트
+        CheckDiceRollButtonState(); // 초기 주사위 버튼 상태 설정
 
         // 초기 상태 설정
         diceResultPopup.SetActive(false);
-        diceRollButton.interactable = true;
-
         actionPopup.SetActive(false);
-        closeActionButton.onClick.AddListener(CloseActionPopup);
+    }
 
-        if(exitButton != null)
+    // 캐릭터 선택 시 호출될 함수
+    void OnCharacterSelected(int index)
+    {
+        if (playerImage != null && playerSprites != null && index >= 0 && index < playerSprites.Length)
         {
-            exitButton.onClick.AddListener(QuitGame);
+            playerImage.sprite = playerSprites[index];
+        }
+        else
+        {
+            Debug.LogError($"플레이어 이미지를 변경할 수 없습니다. (인덱스: {index})");
+        }
+
+        if (diceResultPopupImage != null && dicePopupSprites != null && index >= 0 && index < dicePopupSprites.Length)
+        {
+            diceResultPopupImage.sprite = dicePopupSprites[index];
+        }
+        else
+        {
+            Debug.LogError($"주사위 결과 팝업 이미지를 변경할 수 없습니다. (인덱스: {index})");
+        }
+
+        if (actionPopupImage != null && actionPopupSprites != null && index >= 0 && index < actionPopupSprites.Length)
+        {
+            actionPopupImage.sprite = actionPopupSprites[index];
+        }
+        else
+        {
+            Debug.LogError($"주사위 결과 팝업 이미지를 변경할 수 없습니다. (인덱스: {index})");
+        }
+
+        if (characterSelectionPopup != null)
+        {
+            characterSelectionPopup.SetActive(false); // 선택 팝업 닫기
+        }
+
+        // 게임 컨트롤 UI 활성화 및 초기화
+        InitializeGameControls();
+    }
+
+    // 게임 컨트롤 UI 활성화 및 관련 값 초기화
+    void InitializeGameControls()
+    {
+        diceRollButton.gameObject.SetActive(true);
+        if (addAttemptButton != null) addAttemptButton.gameObject.SetActive(true);
+        // 다른 필요한 UI 요소들도 여기서 활성화
+
+        UpdateAttemptsUI(); // 초기 횟수 UI 업데이트
+        UpdateLapCountUI(); // 초기 바퀴 수 UI 업데이트
+        CheckDiceRollButtonState(); // 초기 주사위 버튼 상태 설정
+    }
+
+    // ----- 주사위 굴리기 횟수 관련 메소드 -----
+    void AddDiceAttempt()
+    {
+        diceRollAttempts++;
+        UpdateAttemptsUI();
+        CheckDiceRollButtonState();
+        Debug.Log("주사위 굴리기 횟수 1 추가. 현재: " + diceRollAttempts);
+    }
+
+    void UpdateAttemptsUI()
+    {
+        if (attemptsText != null)
+        {
+            attemptsText.text = "굴리기 횟수: " + diceRollAttempts;
+        }
+    }
+
+    void CheckDiceRollButtonState()
+    {
+        if (diceRollButton != null)
+        {
+            diceRollButton.interactable = (diceRollAttempts > 0);
+        }
+    }
+
+    // ----- 바퀴 수 관련 메소드 -----
+    public void IncrementLapCount() // PlayerMovement에서 호출됨
+    {
+        lapCount++;
+        UpdateLapCountUI();
+        Debug.Log("바퀴 수 증가! 현재: " + lapCount + " 바퀴");
+        // 여기에 바퀴 수 증가 시 효과음 등을 추가할 수 있습니다.
+    }
+
+    void UpdateLapCountUI()
+    {
+        if (lapCountText != null)
+        {
+            lapCountText.text = "바퀴 수: " + lapCount;
         }
     }
 
     void RollDice()
     {
+        if (diceRollAttempts <= 0)
+        {
+            Debug.Log("주사위 굴리기 횟수가 없습니다.");
+            CheckDiceRollButtonState(); // 확실히 비활성화
+            return;
+        }
+        diceRollAttempts--; // 횟수 1 소모
+        UpdateAttemptsUI();
+
         currentDiceValue = Random.Range(1, 7); // 1~6 사이의 랜덤 정수 생성
         resultText.text = $"주사위 결과: {currentDiceValue}";
 

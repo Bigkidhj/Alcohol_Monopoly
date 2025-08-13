@@ -12,6 +12,8 @@ public class PlayerMovements : MonoBehaviour
     private int currentTileIndex = 0;
     private int totalTiles = 0;
     private bool isMoving = false; // 이동 중인지 확인하는 플래그
+    private bool hasLeftStartTileOnce = false; // 시작 타일(0번)을 한 번이라도 떠났는지 여부
+
     void Start()
     {
 
@@ -46,16 +48,33 @@ public class PlayerMovements : MonoBehaviour
     {
         isMoving = true;
 
-        for(int i = 0; i < steps; i++)
+        for (int i = 0; i < steps; i++)
         {
-            // 1. 다음 타일 인덱스 계산
+            int previousSingleStepIndex = currentTileIndex; // 현재 스텝 이동 전 위치 저장
             int nextTileIndex = (currentTileIndex + 1) % totalTiles;
-            // 2. 다음 타일 위치 가져오기
             Vector3 nextPosition = boardGenerator.tileTransforms[nextTileIndex].position;
-            // 3. 한 칸 이동 애니메이션 실행 및 완료 대기
+
             yield return StartCoroutine(AnimateSingleStep(nextPosition));
-            // 4. 현재 타일 인덱스 업데이트
+
             currentTileIndex = nextTileIndex;
+
+            // ----- 바퀴 수 감지 로직 -----
+            if (currentTileIndex != 0) // 0번 타일이 아니면, 일단 시작 타일을 떠난 것으로 간주
+            {
+                hasLeftStartTileOnce = true;
+            }
+            // 시작 타일을 한 번이라도 떠났었고, 현재 0번 타일에 도착했으며, 이전 칸이 마지막 칸이었던 경우
+            // (즉, 0번 타일을 '지나서' 다시 0번 타일에 '도착'한 경우)
+            if (hasLeftStartTileOnce && currentTileIndex == 0 && previousSingleStepIndex == totalTiles - 1)
+            {
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.IncrementLapCount();
+                }
+                // hasLeftStartTileOnce = false; // 한 바퀴 돌았으므로 다시 0번을 떠나야 다음 랩 감지 (선택적)
+                // 이 플래그를 false로 하면 0번에서 0번으로 바로 한칸 더 돌때는 랩카운트 안됨.
+                // 유저가 0번칸에서 다시 출발해서 0번칸으로 돌아올때 카운트되는것이 자연스러우므로 그대로 둠.
+            }
             // 5. (선택 사항) 칸 이동 사이에 짧은 딜레이 추가
             if (delayBetweenSteps > 0)
             {
